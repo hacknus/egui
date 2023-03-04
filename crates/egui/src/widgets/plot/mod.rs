@@ -283,6 +283,7 @@ pub struct Plot {
 
     reset: bool,
 
+    log_axes: [bool; 2],
     show_x: bool,
     show_y: bool,
     label_formatter: LabelFormatter,
@@ -325,6 +326,7 @@ impl Plot {
 
             reset: false,
 
+            log_axes: [false; 2],
             show_x: true,
             show_y: true,
             label_formatter: None,
@@ -376,6 +378,48 @@ impl Plot {
     pub fn min_size(mut self, min_size: Vec2) -> Self {
         self.min_size = min_size;
         self
+    }
+
+    /// Show log axes. Default: `false, false`.
+    pub fn log_axes(mut self, log_axes: [bool; 2]) -> Self {
+        self.log_axes = log_axes;
+        if self.log_axes[0] && self.log_axes[1] {
+            let label_fmt = move |s: &str, val: &PlotPoint| {
+                format!(
+                    "{}\n{:4.2}\n{:4.2}",
+                    s,
+                    10.0_f64.powf(val.x),
+                    10.0_f64.powf(val.y)
+                )
+            };
+            let ax_fmt =
+                move |x: f64, _range: &RangeInclusive<f64>| format!("{:4.2}", 10.0_f64.powf(x));
+            self.label_formatter(label_fmt)
+                .x_axis_formatter(ax_fmt)
+                .y_axis_formatter(ax_fmt)
+                .x_grid_spacer(logarithmic_grid_spacer(10))
+                .y_grid_spacer(logarithmic_grid_spacer(10))
+        } else if self.log_axes[0] {
+            let label_fmt = move |s: &str, val: &PlotPoint| {
+                format!("{}\n{:4.2}\n{:4.2}", s, 10.0_f64.powf(val.x), val.y)
+            };
+            let ax_fmt =
+                move |y: f64, _range: &RangeInclusive<f64>| format!("{:4.2}", 10.0_f64.powf(y));
+            self.label_formatter(label_fmt)
+                .x_axis_formatter(ax_fmt)
+                .x_grid_spacer(logarithmic_grid_spacer(10))
+        } else if self.log_axes[1] {
+            let label_fmt = move |s: &str, val: &PlotPoint| {
+                format!("{}\n{:4.2}\n{:4.2}", s, val.x, 10.0_f64.powf(val.y),)
+            };
+            let ax_fmt =
+                move |y: f64, _range: &RangeInclusive<f64>| format!("{:4.2}", 10.0_f64.powf(y));
+            self.label_formatter(label_fmt)
+                .y_axis_formatter(ax_fmt)
+                .y_grid_spacer(logarithmic_grid_spacer(10))
+        } else {
+            self
+        }
     }
 
     /// Show the x-value (e.g. when hovering). Default: `true`.
@@ -672,6 +716,7 @@ impl Plot {
             min_size,
             data_aspect,
             view_aspect,
+            log_axes,
             mut show_x,
             mut show_y,
             label_formatter,
@@ -1651,6 +1696,59 @@ fn fill_marks_between(out: &mut Vec<GridMark>, step_size: f64, (min, max): (f64,
         GridMark { value, step_size }
     });
     out.extend(marks_iter);
+}
+
+/// Fill in all values between [min, max]
+fn generate_marks_log_plot(step_sizes: [f64; 3], bounds: (f64, f64)) -> Vec<GridMark> {
+    let mut steps = vec![];
+    make_marks_log_plot(&mut steps, step_sizes, bounds);
+    steps
+}
+
+/// Fill in all values between [min, max] which are a multiple of `step_size`
+fn make_marks_log_plot(out: &mut Vec<GridMark>, step_size: [f64; 3], (min, max): (f64, f64)) {
+    assert!(max > min);
+    // TODO: pos/neg check
+    let first = (min).floor() as i64;
+    let last = (max).floor() as i64;
+
+    let mut marks_iter = vec![];
+    for i in first..=last {
+        let step = (10_f64.powi(i as i32 + 1) - 10_f64.powi(i as i32)) / 9.0;
+        marks_iter.push(GridMark {
+            value: i as f64,
+            step_size: step_size[1],
+        });
+        for j in 1..9 {
+            let value = 10_f64.powi(i as i32) + j as f64 * step;
+            marks_iter.push(GridMark {
+                value: value.log(10.0),
+                step_size: step_size[0],
+            });
+        }
+    }
+
+    out.extend(marks_iter);
+}
+
+pub fn logarithmic_grid_spacer(log_base: i64) -> GridSpacer {
+    let log_base = log_base as f64;
+    let step_sizes = move |input: GridInput| -> Vec<GridMark> {
+        // The distance between two of the thinnest grid lines is "rounded" up
+        // to the next-bigger power of base
+
+        let smallest_visible_unit = next_power(input.base_step_size, log_base);
+
+        let step_sizes = [
+            smallest_visible_unit,
+            smallest_visible_unit * log_base,
+            smallest_visible_unit * log_base * log_base,
+        ];
+
+        generate_marks_log_plot(step_sizes, input.bounds)
+    };
+
+    Box::new(step_sizes)
 }
 
 /// Helper for formatting a number so that we always show at least a few decimals,
