@@ -1,3 +1,4 @@
+use winit::dpi::PhysicalPosition;
 use egui::ViewportBuilder;
 
 /// Can be used to store native window settings (position and size).
@@ -20,14 +21,13 @@ pub struct WindowSettings {
 }
 
 impl WindowSettings {
-    pub fn from_window(egui_zoom_factor: f32, window: &winit::window::Window) -> Self {
+    pub fn from_window(egui_zoom_factor: f32, window: &dyn winit::window::Window) -> Self {
         let inner_size_points = window
-            .inner_size()
+            .surface_size()
             .to_logical::<f32>(egui_zoom_factor as f64 * window.scale_factor());
 
-        let inner_position_pixels = window
-            .inner_position()
-            .ok()
+        let inner_position_pixels = Some(window
+            .surface_position())
             .map(|p| egui::pos2(p.x as f32, p.y as f32));
 
         let outer_position_pixels = window
@@ -56,7 +56,7 @@ impl WindowSettings {
     pub fn initialize_viewport_builder(
         &self,
         egui_zoom_factor: f32,
-        event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &dyn winit::event_loop::ActiveEventLoop,
         mut viewport_builder: ViewportBuilder,
     ) -> ViewportBuilder {
         profiling::function_scope!();
@@ -90,12 +90,12 @@ impl WindowSettings {
         viewport_builder
     }
 
-    pub fn initialize_window(&self, window: &winit::window::Window) {
+    pub fn initialize_window(&self, window: &Box<dyn winit::window::Window>) {
         if cfg!(target_os = "macos") {
             // Mac sometimes has problems restoring the window to secondary monitors
             // using only `WindowBuilder::with_position`, so we need this extra step:
             if let Some(pos) = self.outer_position_pixels {
-                window.set_outer_position(winit::dpi::PhysicalPosition { x: pos.x, y: pos.y });
+                window.set_outer_position(winit::dpi::Position::Physical (PhysicalPosition{  x: pos.x as i32, y: pos.y as i32 }));
             }
         }
     }
@@ -117,7 +117,7 @@ impl WindowSettings {
     pub fn clamp_position_to_monitors(
         &mut self,
         egui_zoom_factor: f32,
-        event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &dyn winit::event_loop::ActiveEventLoop,
     ) {
         // If the app last ran on two monitors and only one is now connected, then
         // the given position is invalid.
@@ -143,7 +143,7 @@ impl WindowSettings {
 
 fn find_active_monitor(
     egui_zoom_factor: f32,
-    event_loop: &winit::event_loop::ActiveEventLoop,
+    event_loop: &dyn winit::event_loop::ActiveEventLoop,
     window_size_pts: egui::Vec2,
     position_px: &egui::Pos2,
 ) -> Option<winit::monitor::MonitorHandle> {
@@ -160,10 +160,10 @@ fn find_active_monitor(
 
     for monitor in monitors {
         let window_size_px = window_size_pts * (egui_zoom_factor * monitor.scale_factor() as f32);
-        let monitor_x_range = (monitor.position().x - window_size_px.x as i32)
-            ..(monitor.position().x + monitor.size().width as i32);
-        let monitor_y_range = (monitor.position().y - window_size_px.y as i32)
-            ..(monitor.position().y + monitor.size().height as i32);
+        let monitor_x_range = (monitor.position()?.x - window_size_px.x as i32)
+            ..(monitor.position()?.x + monitor.current_video_mode()?.size().width as i32);
+        let monitor_y_range = (monitor.position()?.y - window_size_px.y as i32)
+            ..(monitor.position()?.y + monitor.current_video_mode()?.size().height as i32);
 
         if monitor_x_range.contains(&(position_px.x as i32))
             && monitor_y_range.contains(&(position_px.y as i32))
@@ -177,7 +177,7 @@ fn find_active_monitor(
 
 fn clamp_pos_to_monitors(
     egui_zoom_factor: f32,
-    event_loop: &winit::event_loop::ActiveEventLoop,
+    event_loop: &dyn winit::event_loop::ActiveEventLoop,
     window_size_pts: egui::Vec2,
     position_px: &mut egui::Pos2,
 ) {
@@ -199,12 +199,12 @@ fn clamp_pos_to_monitors(
         );
     }
     let monitor_position = egui::Pos2::new(
-        active_monitor.position().x as f32,
-        active_monitor.position().y as f32,
+        active_monitor.position().unwrap().x as f32,
+        active_monitor.position().unwrap().y as f32,
     );
     let monitor_size_px = egui::Vec2::new(
-        active_monitor.size().width as f32,
-        active_monitor.size().height as f32,
+        active_monitor.current_video_mode().unwrap().size().width as f32,
+        active_monitor.current_video_mode().unwrap().size().height as f32,
     );
 
     // Window size cannot be negative or the subsequent `clamp` will panic.

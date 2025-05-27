@@ -150,7 +150,7 @@ egui-winit = { workspace = true, default-features = false, features = [
   "links",
 ] }
 image = { workspace = true, features = ["png"] } # Needed for app icon
-winit = { workspace = true, default-features = false, features = ["rwh_06"] }
+winit = { workspace = true, default-features = false }
 
 # optional native:
 egui-wgpu = { workspace = true, optional = true, features = [

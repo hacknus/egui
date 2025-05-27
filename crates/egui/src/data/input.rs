@@ -545,6 +545,12 @@ pub enum Event {
 
         image: std::sync::Arc<ColorImage>,
     },
+    /// Files opened with the application (e.g. via "Open With..." or command line).
+    /// This is distinct from `dropped_files` which is for drag-and-drop.
+    FilesOpened {
+        /// The paths of the files that were opened.
+        paths: Vec<std::path::PathBuf>,
+    },
 }
 
 /// IME event.
